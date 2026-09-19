@@ -40,7 +40,7 @@ class ScanRequest(BaseModel):
     seed: str
     market: str = "US"
     demo: bool = True
-    ai_providers: list[str] = []
+    ai_providers: list[str] = Field(default_factory=list)
 
 
 def now_iso() -> str:
