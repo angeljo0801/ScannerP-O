@@ -1,0 +1,11 @@
+.dart_tool/
+.packages
+.pub/
+build/
+android/.gradle/
+android/local.properties
+*.iml
+.idea/
+.vscode/
+backend/__pycache__/
+backend/.env
