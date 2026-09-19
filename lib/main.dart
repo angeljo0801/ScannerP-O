@@ -52,6 +52,7 @@ class _AppShellState extends State<AppShell> {
   String backendUrl = 'https://your-backend.example.com';
   bool checkingBackend = false;
   String backendStatus = 'No comprobado';
+  final Set<String> enabledAiProviders = {'openai'};
 
   late final List<Widget> pages;
 
@@ -61,7 +62,10 @@ class _AppShellState extends State<AppShell> {
     pages = [
       HomeScreen(onOpenPipeline: () => setState(() => index = 1)),
       const PipelineScreen(),
-      const ScannersScreen(),
+      ScannersScreen(
+        enabledAiProviders: enabledAiProviders,
+        onManageConnectors: _showConnectorManager,
+      ),
       const OpportunitiesScreen(),
       SettingsScreen(
         demoMode: demoMode,
@@ -71,11 +75,17 @@ class _AppShellState extends State<AppShell> {
         onDemoModeChanged: (value) => setState(() => demoMode = value),
         onBackendUrlChanged: (value) => backendUrl = value,
         onCheckBackend: _checkBackend,
+        enabledAiProviders: enabledAiProviders,
+        onManageConnectors: _showConnectorManager,
       ),
     ];
   }
 
   void _rebuildSettingsPage() {
+    pages[2] = ScannersScreen(
+      enabledAiProviders: enabledAiProviders,
+      onManageConnectors: _showConnectorManager,
+    );
     pages[4] = SettingsScreen(
       demoMode: demoMode,
       backendUrl: backendUrl,
@@ -89,7 +99,26 @@ class _AppShellState extends State<AppShell> {
       },
       onBackendUrlChanged: (value) => backendUrl = value,
       onCheckBackend: _checkBackend,
+      enabledAiProviders: enabledAiProviders,
+      onManageConnectors: _showConnectorManager,
     );
+  }
+
+  Future<void> _showConnectorManager() async {
+    final selected = Set<String>.from(enabledAiProviders);
+    final updated = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF111827),
+      builder: (context) => AiConnectorManagerSheet(initialSelection: selected),
+    );
+    if (updated == null || !mounted) return;
+    setState(() {
+      enabledAiProviders
+        ..clear()
+        ..addAll(updated);
+      _rebuildSettingsPage();
+    });
   }
 
   Future<void> _checkBackend() async {
@@ -209,6 +238,53 @@ class BackendProbe {
       client?.close(force: true);
     }
   }
+}
+
+class AiProviderOption {
+  final String id;
+  final String name;
+  final String note;
+
+  const AiProviderOption({
+    required this.id,
+    required this.name,
+    required this.note,
+  });
+}
+
+class AiProviderCatalog {
+  static const all = <AiProviderOption>[
+    AiProviderOption(
+      id: 'openai',
+      name: 'OpenAI / ChatGPT',
+      note: 'API scan con búsqueda web; consumer check separado cuando aplique.',
+    ),
+    AiProviderOption(
+      id: 'gemini',
+      name: 'Gemini',
+      note: 'Gemini API + Google Search grounding.',
+    ),
+    AiProviderOption(
+      id: 'perplexity',
+      name: 'Perplexity',
+      note: 'Search/answer adapter para consultas de intención de compra.',
+    ),
+    AiProviderOption(
+      id: 'claude',
+      name: 'Claude',
+      note: 'Claude API + web search.',
+    ),
+    AiProviderOption(
+      id: 'copilot',
+      name: 'Microsoft Copilot',
+      note: 'Conector independiente; consumer experience se mide por separado.',
+    ),
+    AiProviderOption(
+      id: 'google_ai_mode',
+      name: 'Google AI Mode',
+      note: 'Conector independiente para la experiencia de búsqueda de Google.',
+    ),
+  ];
 }
 
 enum ScannerState { ready, planned, blocked, running }
@@ -942,7 +1018,14 @@ class PipelineStep extends StatelessWidget {
 }
 
 class ScannersScreen extends StatefulWidget {
-  const ScannersScreen({super.key});
+  final Set<String> enabledAiProviders;
+  final VoidCallback onManageConnectors;
+
+  const ScannersScreen({
+    super.key,
+    required this.enabledAiProviders,
+    required this.onManageConnectors,
+  });
 
   @override
   State<ScannersScreen> createState() => _ScannersScreenState();
@@ -970,11 +1053,24 @@ class _ScannersScreenState extends State<ScannersScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text(
-          'Scanners',
-          style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Scanners',
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+              ),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: widget.onManageConnectors,
+              icon: const Icon(Icons.add_link),
+              label: const Text('Añadir'),
+            ),
+          ],
         ),
         const SizedBox(height: 10),
+        AiCoverageCard(enabledAiProviders: widget.enabledAiProviders),
+        const SizedBox(height: 12),
         TextField(
           onChanged: (value) => setState(() => query = value),
           decoration: const InputDecoration(
@@ -1453,6 +1549,151 @@ class TeamMemoCard extends StatelessWidget {
   }
 }
 
+class AiCoverageCard extends StatelessWidget {
+  final Set<String> enabledAiProviders;
+
+  const AiCoverageCard({super.key, required this.enabledAiProviders});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = AiProviderCatalog.all.length;
+    final enabled = enabledAiProviders.length;
+    final coverage = total == 0 ? 0.0 : enabled / total;
+    final percent = (coverage * 100).round();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.hub_outlined),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    enabled == 0
+                        ? 'AI Visibility: sin conectores'
+                        : 'AI Visibility: ${enabled} motor${enabled == 1 ? '' : 'es'} activo${enabled == 1 ? '' : 's'}',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                Text('$percent% cobertura'),
+              ],
+            ),
+            const SizedBox(height: 10),
+            LinearProgressIndicator(
+              value: coverage,
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              enabled == 0
+                  ? 'El pipeline continúa con Trend, Social, Sales, Ads, Supplier, CAC y demás. AI Visibility se marca DATO FALTANTE.'
+                  : 'Los prompts se ejecutan solo en los motores habilitados. La cobertura parcial produce resultados válidos, pero reduce confidence.',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.68)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class AiConnectorManagerSheet extends StatefulWidget {
+  final Set<String> initialSelection;
+
+  const AiConnectorManagerSheet({super.key, required this.initialSelection});
+
+  @override
+  State<AiConnectorManagerSheet> createState() => _AiConnectorManagerSheetState();
+}
+
+class _AiConnectorManagerSheetState extends State<AiConnectorManagerSheet> {
+  late Set<String> selected;
+
+  @override
+  void initState() {
+    super.initState();
+    selected = Set<String>.from(widget.initialSelection);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Añadir scanners de IA',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 7),
+              const Text(
+                'Ninguno es obligatorio. Puedes empezar con un solo motor y añadir los demás cuando quieras.',
+              ),
+              const SizedBox(height: 14),
+              ...AiProviderCatalog.all.map(
+                (provider) => Card(
+                  child: CheckboxListTile(
+                    value: selected.contains(provider.id),
+                    onChanged: (value) {
+                      setState(() {
+                        if (value == true) {
+                          selected.add(provider.id);
+                        } else {
+                          selected.remove(provider.id);
+                        }
+                      });
+                    },
+                    title: Text(
+                      provider.name,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(provider.note),
+                    secondary: const Icon(Icons.smart_toy_outlined),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () => setState(selected.clear),
+                    child: const Text('Quitar todos'),
+                  ),
+                  const Spacer(),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.pop(context, selected),
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Guardar'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class SettingsScreen extends StatefulWidget {
   final bool demoMode;
   final String backendUrl;
@@ -1461,6 +1702,8 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<bool> onDemoModeChanged;
   final ValueChanged<String> onBackendUrlChanged;
   final VoidCallback onCheckBackend;
+  final Set<String> enabledAiProviders;
+  final VoidCallback onManageConnectors;
 
   const SettingsScreen({
     super.key,
@@ -1471,6 +1714,8 @@ class SettingsScreen extends StatefulWidget {
     required this.onDemoModeChanged,
     required this.onBackendUrlChanged,
     required this.onCheckBackend,
+    required this.enabledAiProviders,
+    required this.onManageConnectors,
   });
 
   @override
@@ -1575,6 +1820,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(15),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Conectores AI opcionales',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: widget.onManageConnectors,
+                      icon: const Icon(Icons.add_link),
+                      label: const Text('Gestionar'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  widget.enabledAiProviders.isEmpty
+                      ? 'Ningún motor conectado. AI Visibility queda como DATO FALTANTE, pero los demás scanners siguen funcionando.'
+                      : '${widget.enabledAiProviders.length} de ${AiProviderCatalog.all.length} motores habilitados. El scanner usa solo los conectados.',
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: AiProviderCatalog.all
+                      .where((provider) => widget.enabledAiProviders.contains(provider.id))
+                      .map((provider) => Chip(label: Text(provider.name)))
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
         const Card(
           child: ListTile(
             leading: Icon(Icons.account_balance_wallet_outlined),
@@ -1602,7 +1888,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 18),
         Text(
-          'V1 Foundation · scanner_po 0.1.0',
+          'V1 Modular Connectors · scanner_po 0.2.0',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 12,
