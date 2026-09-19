@@ -1,0 +1,77 @@
+name: Build Scanner P&O APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Generate Android shell
+        shell: bash
+        run: |
+          rm -rf /tmp/scanner_po_shell
+          flutter create --platforms=android --org com.wealthos --project-name scanner_po /tmp/scanner_po_shell
+          rm -rf android
+          cp -R /tmp/scanner_po_shell/android ./android
+          cp /tmp/scanner_po_shell/.metadata ./.metadata
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text()
+          if "android.permission.INTERNET" not in text:
+              close = text.find(">")
+              text = text[:close + 1] + "\n    <uses-permission android:name=\"android.permission.INTERNET\" />" + text[close + 1:]
+          text = text.replace('android:label="scanner_po"', 'android:label="Scanner P&amp;O"')
+          manifest.write_text(text)
+          PY
+
+      - name: Validate backend syntax
+        run: python3 -m py_compile backend/app.py
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test
+        run: flutter test
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Prepare artifact
+        run: cp build/app/outputs/flutter-apk/app-release.apk Scanner-P-O-v0.1.0.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Scanner-P-O-APK
+          path: Scanner-P-O-v0.1.0.apk
+          if-no-files-found: error
+          retention-days: 30
