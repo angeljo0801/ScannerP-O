@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 from typing import Any, Literal
 
 from fastapi import FastAPI
@@ -39,6 +40,7 @@ class ScanRequest(BaseModel):
     seed: str
     market: str = "US"
     demo: bool = True
+    ai_providers: list[str] = []
 
 
 def now_iso() -> str:
@@ -52,6 +54,30 @@ def health():
         "service": "scanner-po",
         "version": "0.1.0",
         "time": now_iso(),
+    }
+
+
+@app.get("/ai-providers")
+def ai_providers():
+    providers = [
+        ("openai", "OpenAI / ChatGPT", "OPENAI_API_KEY"),
+        ("gemini", "Gemini", "GEMINI_API_KEY"),
+        ("perplexity", "Perplexity", "PERPLEXITY_API_KEY"),
+        ("claude", "Claude", "ANTHROPIC_API_KEY"),
+        ("copilot", "Microsoft Copilot", None),
+        ("google_ai_mode", "Google AI Mode", None),
+    ]
+    return {
+        "providers": [
+            {
+                "id": provider_id,
+                "name": name,
+                "configured": bool(os.getenv(env_name)) if env_name else False,
+                "mode": "api" if env_name else "consumer_check_adapter",
+            }
+            for provider_id, name, env_name in providers
+        ],
+        "rule": "No provider is mandatory. Zero providers marks AI Visibility as DATA_MISSING; one or more providers scan only those enabled.",
     }
 
 
@@ -115,6 +141,13 @@ def scan(request: ScanRequest):
         "seed": request.seed,
         "market": request.market,
         "demo": True,
+        "ai_providers": request.ai_providers,
+        "ai_coverage": {
+            "enabled": len(request.ai_providers),
+            "total_known": 6,
+            "percent": round((len(request.ai_providers) / 6) * 100),
+        },
+        "ai_visibility_status": "DATA_MISSING" if not request.ai_providers else "PARTIAL_OR_FULL",
         "job_id": "demo-" + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"),
         "next": "STORE_OPPORTUNITY_SCANNER",
     }
