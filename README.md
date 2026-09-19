@@ -37,3 +37,18 @@ El workflow de GitHub Actions genera un APK release y lo publica como artifact l
 ## Estado
 
 V1 Foundation: interfaz completa, pipeline, catálogo de scanners, Opportunity Cards, modo demo, conexión backend y contrato de backend.
+
+
+## Conectores modulares
+
+Los motores de IA son opcionales. Scanner P&O puede operar con cero, uno o varios conectores:
+- OpenAI / ChatGPT
+- Gemini
+- Perplexity
+- Claude
+- Microsoft Copilot
+- Google AI Mode
+
+Si no hay motores AI conectados, AI Visibility se marca como DATO FALTANTE y el resto del pipeline sigue funcionando.
+Si hay un solo motor, se usa únicamente ese motor y se reporta cobertura parcial.
+Añadir más motores aumenta cobertura y puede elevar la confianza, pero no invalida resultados previos de motores ya medidos.
