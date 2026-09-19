@@ -68,12 +68,17 @@ jobs:
         run: flutter build apk --release
 
       - name: Prepare artifact
-        run: cp build/app/outputs/flutter-apk/app-release.apk Scanner-P-O-v0.1.0.apk
+        shell: bash
+        run: |
+          APP_VERSION=$(awk '/^version:/ {print $2}' pubspec.yaml | cut -d+ -f1)
+          APK_NAME="Scanner-P-O-v${APP_VERSION}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "${APK_NAME}"
+          echo "APK_NAME=${APK_NAME}" >> "$GITHUB_ENV"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Scanner-P-O-APK
-          path: Scanner-P-O-v0.1.0.apk
+          path: ${{ env.APK_NAME }}
           if-no-files-found: error
           retention-days: 30
